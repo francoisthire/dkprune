@@ -1,0 +1,19 @@
+synopsis: "A tool to prune Dedukti files"
+description:
+"""
+Dkprune allows you to select a number of constants to keep and prune all the Dedukti files with all the things irrelevant.
+"""
+opam-version: "0.1"
+maintainer: "francois.thire@lsv.fr"
+bug-reports: "https://github.com/francoisthire/dkprune/issues"
+homepage: "https://github.com/francoisthire/dkprune"
+dev-repo: "git+https://github.com/francoisthire/dkprune.git"
+authors: [ "François Thiré <francois.thire@lsv.fr>" ]
+license: "CeCILL"
+
+depends: [
+  "ocaml"        {         >= "4.04.0" }
+  "dedukti"
+]
+
+build: [ [ "dune" "build" "-p" name "-j" jobs ] ]

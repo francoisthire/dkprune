@@ -1,0 +1,21 @@
+# Dune files.
+_build/
+*.native
+*.docdir
+.merlin
+*.install
+
+# Editor temporary files.
+*~
+\#*\#
+.\#*
+*.bak
+*.baki
+
+# LaTeX files
+*.aux
+*.log
+*.pdf
+*.pyg
+*.thm
+LaTeX/
