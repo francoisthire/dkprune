@@ -7,7 +7,11 @@ exception NoPruneFile
 
 let output_directory : string option ref = ref None
 
-type constraints = Dep.NameSet.t
+type constraints =
+  {
+    names:Dep.NameSet.t;
+    mds: mident list
+  }
 
 let _ =
   Dep.ignore := true;
@@ -59,45 +63,65 @@ let name_of_entry md = function
     r'.cst
   | _ as e -> raise @@ EntryNotHandled e
 
-let mk_entry deps md fmt e =
+let mk_entry names md fmt e =
   let name = name_of_entry md e in
-  if Dep.NameSet.mem name deps then
+  if Dep.NameSet.mem name names then
     Format.fprintf fmt "%a" Pp.print_entry e
 
-let mk_file deps (md,in_file,out_file) =
+let is_empty deps md in_file =
   let input = open_in in_file in
-  let output = open_out out_file in
-  let fmt = Format.formatter_of_out_channel output in
-  Parser.Parse_channel.handle md (fun e -> Format.fprintf fmt "%a" (mk_entry deps md) e) input;
-  close_out output;
-  close_in input
+  let empty = ref true in
+  let mk_entry e =
+    let name = name_of_entry md e in
+    if Dep.NameSet.mem name deps then
+      empty := false;
+  in
+  Parser.Parse_channel.handle md mk_entry input;
+  close_in input;
+  !empty
 
-let print_dependencies cstr =
+let mk_file deps (md,in_file,out_file) =
+  if not @@ is_empty deps md in_file then
+    let input = open_in in_file in
+    let output = open_out out_file in
+    let fmt = Format.formatter_of_out_channel output in
+    Parser.Parse_channel.handle md (fun e -> Format.fprintf fmt "%a" (mk_entry deps md) e) input;
+    close_out output;
+    close_in input
+
+let print_dependencies names =
   let open Dep in
-  NameSet.iter Dep.transitive_closure cstr;
+  NameSet.iter Dep.transitive_closure names;
   let down = NameSet.fold
       (fun name dependencies ->
-         NameSet.union (get_data name).down dependencies) cstr cstr in
+         NameSet.union (get_data name).down dependencies) names names in
   let files = get_files () in
   List.iter (mk_file down) files
 
+let names_of_md md =
+  let file = Dep.get_file md in
+  let input = open_in file in
+  let names = ref Dep.NameSet.empty in
+  let mk_entry e =
+    let n = name_of_entry md e in
+    names := Dep.NameSet.add n !names
+  in
+  Parser.Parse_channel.handle md mk_entry input;
+  close_in input;
+  !names
+
 let mk_cstr =
-  let open Rule in
   function
-  | Entry.Rules(_,[r]) ->
-    begin
-      match r.pat with
-      | Pattern(_,name,_) -> name
-      | _ -> raise BadFormat
-    end
+  | Entry.Require(_,md) -> names_of_md md
+  | Entry.DTree(_,Some md, id) -> Dep.NameSet.singleton (mk_name md id)
   | _ -> raise BadFormat
 
-let parse_constraints : string -> Dep.NameSet.t = fun file ->
+let parse_constraints = fun file ->
   let input = open_in file in
   let md = mk_mident file in
-  let cstr = List.map mk_cstr (Parser.Parse_channel.parse md input) in
+  let pcstr = List.map mk_cstr (Parser.Parse_channel.parse md input) in
   close_in input;
-  Dep.NameSet.of_list cstr
+  List.fold_left Dep.NameSet.union Dep.NameSet.empty pcstr
 
 let _ =
   (* Parsing of command line arguments. *)
@@ -144,11 +168,9 @@ Available options:" Sys.argv.(0) in
     Arg.parse args (fun f -> files := f :: !files) usage;
     List.rev !files
   in
+  let open Dep in
   try
-    let cstr =
-      List.fold_left
-        (fun set file -> Dep.NameSet.union (parse_constraints file) set) Dep.NameSet.empty files
-    in
+    let cstr = List.fold_left NameSet.union NameSet.empty (List.map parse_constraints files) in
     handle_constraints cstr;
     print_dependencies cstr
   with
