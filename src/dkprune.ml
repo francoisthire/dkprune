@@ -7,6 +7,15 @@ exception NoPruneFile
 
 let output_directory : string option ref = ref None
 
+module D = Basic.Debug
+type D.flag += D_prune
+let _ = D.register_flag D_prune "Dkprune"
+let enable_log : unit -> unit = fun () -> D.enable_flag D_prune
+
+let gre fmt = "\027[32m" ^^ fmt ^^ "\027[0m%!"
+
+let log fmt = D.debug D_prune (gre fmt)
+
 type constraints =
   {
     names:Dep.NameSet.t;
@@ -24,6 +33,7 @@ let rec handle_file : string -> unit =
     if not @@ Dep.MDepSet.mem (md,file) !computed then
       begin
         computed := Dep.MDepSet.add (md,file) !computed;
+        log "[COMPUTE DEP] %s" file;
         let input = open_in file in
         Dep.handle md (fun f -> Parser.Parse_channel.handle md f input);
         close_in input;
@@ -65,6 +75,7 @@ let name_of_entry md = function
 
 let mk_entry names md fmt e =
   let name = name_of_entry md e in
+  Pp.set_module md;
   if Dep.NameSet.mem name names then
     Format.fprintf fmt "%a" Pp.print_entry e
 
@@ -81,6 +92,7 @@ let is_empty deps md in_file =
   !empty
 
 let mk_file deps (md,in_file,out_file) =
+  log "[WRITING FILE] %s" out_file;
   if not @@ is_empty deps md in_file then
     let input = open_in in_file in
     let output = open_out out_file in
@@ -124,37 +136,13 @@ let parse_constraints = fun file ->
   List.fold_left Dep.NameSet.union Dep.NameSet.empty pcstr
 
 let _ =
-  (* Parsing of command line arguments. *)
-  let sorted  = ref false   in
   let args = Arg.align
-    [ ( "-d"
-      , Arg.String Env.set_debug_mode
-      , "FLAGS enables debugging for all given flags:
-      q : (quiet)    disables all warnings
-      n : (notice)   notifies about which symbol or rule is currently treated
-      o : (module)   notifies about loading of an external module (associated
-                     to the command #REQUIRE)
-      c : (confluence) notifies about information provided to the confluence
-                     checker (when option -cc used)
-      u : (rule)     provides information about type checking of rules
-      t : (typing)   provides information about type-checking of terms
-      r : (reduce)   provides information about reduction performed in terms
-      m : (matching) provides information about pattern matching" )
-    ; ( "-v"
-      , Arg.Unit (fun () -> Env.set_debug_mode "montru")
-      , " Verbose mode (equivalent to -d 'montru')" )
-    ; ( "-q"
-      , Arg.Unit (fun () -> Env.set_debug_mode "q")
-      , " Quiet mode (equivalent to -d 'q')" )
-    ; ( "-s"
-      , Arg.Set sorted
-      , " Sort the source files according to their dependencies" )
-    ; ( "--ignore"
-      , Arg.Set Dep.ignore
-      , " If some dependencies are not found, ignore them" )
+    [ ( "-l"
+      , Arg.Unit enable_log
+      , " Print log")
     ; ( "-I"
       , Arg.String add_path
-      , "DIR Add the directory DIR to the load path" )
+      , " DIR Add the directory DIR to the load path" )
     ; ( "-o"
       , Arg.String (fun s -> output_directory := Some s)
       , " Set the output directory" ) ]
